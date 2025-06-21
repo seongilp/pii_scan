@@ -395,14 +395,16 @@ async def get_scan_summary(job_id: str, current_user: dict = Depends(get_current
         privacy_patterns_found={
             "email": 23,
             "phone": 99,
-            "ssn": 1
+            "ssn": 1,
+            "card_number": 5,
+            "account_number": 12
         },
         top_risk_tables=[
             {
                 "table": "T2_USERS",
                 "risk_level": "HIGH",
                 "privacy_score": 15,
-                "patterns": ["email"]
+                "patterns": ["email", "ssn"]
             }
         ]
     )

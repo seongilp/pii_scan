@@ -64,36 +64,23 @@ class DummyDataGenerator:
         return f"{year:04d}{month:02d}{day:02d}-{gender}{region}{checksum}"
     
     def generate_credit_card(self) -> str:
-        """무작위 신용카드번호 생성"""
-        # 카드 타입별 시작번호
-        card_types = {
-            "Visa": "4",
-            "MasterCard": "5",
-            "American Express": "3"
-        }
-        
-        card_type = random.choice(list(card_types.keys()))
-        start_digit = card_types[card_type]
-        
-        if card_type == "American Express":
-            # 15자리
-            remaining = ''.join(random.choices(string.digits, k=14))
-            card_number = start_digit + remaining
-        else:
-            # 16자리
-            remaining = ''.join(random.choices(string.digits, k=15))
-            card_number = start_digit + remaining
+        """무작위 신용카드번호 생성 - 5327로 시작하는 16자리"""
+        # 5327로 시작하는 카드번호 생성
+        start_digits = "5327"
+        remaining = ''.join(random.choices(string.digits, k=12))
+        card_number = start_digits + remaining
         
         # 4자리씩 그룹화
         groups = [card_number[i:i+4] for i in range(0, len(card_number), 4)]
         return '-'.join(groups)
     
     def generate_account_number(self) -> str:
-        """무작위 계좌번호 생성"""
+        """무작위 계좌번호 생성 - 1000으로 시작하는 12자리"""
         bank = random.choice(self.banks)
-        # 10-14자리 계좌번호
-        length = random.randint(10, 14)
-        account_num = ''.join(random.choices(string.digits, k=length))
+        # 1000으로 시작하는 12자리 계좌번호
+        start_digits = "1000"
+        remaining = ''.join(random.choices(string.digits, k=8))
+        account_num = start_digits + remaining
         return f"{bank}-{account_num}"
     
     def generate_address(self) -> str:

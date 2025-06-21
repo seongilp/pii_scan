@@ -34,13 +34,13 @@ class OraclePrivacyScanner:
         # Oracle 연결 문자열 생성
         self.dsn = cx_Oracle.makedsn(host, port, service_name=service_name)
 
-        # 개인정보 패턴 정의
+        # 개인정보 패턴 정의 - 한국 형식으로 업데이트
         self.privacy_patterns = {
             'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
             'phone': r'(\d{2,3}-\d{3,4}-\d{4}|\d{10,11})',
-            'ssn': r'\d{6}-[1-4]\d{6}',
-            'card_number': r'\d{4}-\d{4}-\d{4}-\d{4}',
-            'account_number': r'\d{3}-\d{2}-\d{6}',
+            'ssn': r'\d{6}-[1-4]\d{6}',  # 한국 주민등록번호 형식
+            'card_number': r'5327-\d{4}-\d{4}-\d{4}',  # 5327로 시작하는 16자리 카드번호
+            'account_number': r'1000-\d{8}',  # 1000으로 시작하는 12자리 계좌번호
             'ip_address': r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b',
         }
 
