@@ -1,0 +1,21 @@
+[project]
+name = "piiscan"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "cx-oracle>=8.3.0",
+    "dotenv>=0.9.9",
+    "fastapi>=0.115.13",
+    "matplotlib>=3.10.3",
+    "mysql-connector-python==9.3.0",
+    "pandas==2.3.0",
+    "pandas-stubs==2.2.3.250527",
+    "plotly==6.1.2",
+    "polars==1.31.0",
+    "python-multipart>=0.0.20",
+    "seaborn>=0.13.2",
+    "streamlit==1.46.0",
+    "tqdm>=4.67.1",
+    "uvicorn>=0.34.3",
+]
