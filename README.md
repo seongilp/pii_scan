@@ -3,6 +3,35 @@
 
 MySQL 및 Oracle 데이터베이스에서 개인정보 패턴을 스캔하고 분석하는 도구입니다.
 
+## 🔄 프론트엔드 업데이트
+
+Django 프론트엔드에서 Next.js 프론트엔드로 마이그레이션되었습니다. 새로운 프론트엔드는 다음과 같은 개선 사항을 제공합니다:
+
+- 사이드바 레이아웃을 사용한 모던 UI
+- 라이트 모드와 다크 모드 지원
+- 모바일 및 데스크톱을 위한 반응형 디자인
+- 스캔 진행 상황에 대한 실시간 업데이트
+- 클라이언트 사이드 렌더링을 통한 향상된 사용자 경험
+
+### Next.js 프론트엔드 실행
+
+```bash
+# Next.js 프론트엔드 디렉토리로 이동
+cd nextjs_frontend
+
+# 의존성 설치
+npm install
+# 또는
+yarn install
+
+# 개발 서버 실행
+npm run dev
+# 또는
+yarn dev
+```
+
+자세한 내용은 [Next.js 프론트엔드 README](nextjs_frontend/README.md)를 참조하세요.
+
 ## 🚀 빠른 시작
 
 ### 1. uv를 사용한 환경 설정
@@ -56,9 +85,18 @@ uv add package_name==1.2.3
 ```bash
 # FastAPI 백엔드 실행
 uv run python fastapi_privacy_scanner_backend.py
+# 또는
+uvicorn fastapi_privacy_scanner_backend:app --reload
 
-# Streamlit 대시보드 실행
-uv run streamlit run dahboard.py
+# Django 프론트엔드 실행 (레거시)
+cd django_frontend
+uv run python manage.py runserver
+
+# Next.js 프론트엔드 실행 (새로운 버전)
+cd nextjs_frontend
+npm run dev
+# 또는
+yarn dev
 
 # MySQL 스캔 실행
 uv run python mysql_scan.py
@@ -131,13 +169,19 @@ git push origin --tags
 
 ## 📦 주요 의존성
 
+### 백엔드
 - **FastAPI**: 웹 API 프레임워크
-- **Streamlit**: 대시보드 인터페이스
 - **MySQL Connector**: MySQL 데이터베이스 연결
 - **cx-Oracle**: Oracle 데이터베이스 연결
 - **Pandas**: 데이터 처리 및 분석
 - **Plotly**: 인터랙티브 차트
 - **Matplotlib/Seaborn**: 데이터 시각화
+
+### 프론트엔드
+- **Next.js**: React 프레임워크
+- **Tailwind CSS**: 유틸리티 우선 CSS 프레임워크
+- **shadcn/ui**: UI 컴포넌트
+- **TypeScript**: 타입 안전한 JavaScript
 
 ## 🔧 개발 환경
 

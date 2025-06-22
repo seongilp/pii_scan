@@ -1,1 +1,0 @@
-# Scanner frontend app package
