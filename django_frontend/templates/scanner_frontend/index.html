@@ -1,0 +1,79 @@
+{% extends 'scanner_frontend/base.html' %}
+
+{% block title %}홈 - 개인정보 스캐너{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">개인정보 스캐너 대시보드</h1>
+        
+        {% if error %}
+        <div class="alert alert-danger">
+            <strong>오류:</strong> {{ error }}
+            <p>백엔드 서버가 실행 중인지 확인하세요.</p>
+        </div>
+        {% else %}
+        
+        <!-- API Status Card -->
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">API 상태</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>메시지:</strong> {{ api_status.message }}</p>
+                <p><strong>버전:</strong> {{ api_status.version }}</p>
+                <p><strong>상태:</strong> {{ api_status.status }}</p>
+            </div>
+        </div>
+        
+        <!-- Statistics Card -->
+        <div class="card mt-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">통계</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>작업 통계</h6>
+                        <ul class="list-group">
+                            <li class="list-group-item">전체 작업: {{ stats.total_jobs }}</li>
+                            <li class="list-group-item">완료된 작업: {{ stats.completed_jobs }}</li>
+                            <li class="list-group-item">실패한 작업: {{ stats.failed_jobs }}</li>
+                            <li class="list-group-item">실행 중인 작업: {{ stats.running_jobs }}</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>데이터베이스 유형</h6>
+                        <ul class="list-group">
+                            <li class="list-group-item">MySQL: {{ stats.database_types.mysql }}</li>
+                            <li class="list-group-item">Oracle: {{ stats.database_types.oracle }}</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions -->
+        <div class="card mt-4">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0">빠른 작업</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <a href="{% url 'database_configs' %}" class="btn btn-primary btn-lg w-100 mb-3">
+                            데이터베이스 설정 관리
+                        </a>
+                    </div>
+                    <div class="col-md-6">
+                        <a href="{% url 'scan_jobs' %}" class="btn btn-success btn-lg w-100 mb-3">
+                            새 스캔 시작
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

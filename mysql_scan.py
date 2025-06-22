@@ -1,5 +1,6 @@
 import mysql.connector
 import polars as pl
+import pandas as pd
 import re
 import json
 from typing import Dict, List, Tuple, Any, Optional
@@ -1022,8 +1023,66 @@ class PolarsPrivacyScanner:
         
         return "\n".join(report)
 
+    def generate_excel_summary(self, results: List[Dict], timestamp: str):
+        """
+        스캔 결과를 바탕으로 Excel 요약 리포트를 생성합니다.
+        """
+        report_data = []
+        
+        for db_result in results:
+            db_name = db_result.get('database', 'Unknown')
+            
+            for table_name, table_data in db_result.get('tables', {}).items():
+                if not table_data.get('columns'):
+                    continue
+                
+                for col_name, col_data in table_data.get('columns', {}).items():
+                    pattern_scan = col_data.get('pattern_scan')
+                    
+                    if pattern_scan and 'privacy_matches' in pattern_scan and pattern_scan['privacy_matches']:
+                        for pattern_type, count in pattern_scan['privacy_matches'].items():
+                            report_data.append({
+                                '데이터베이스명': db_name,
+                                '테이블명': table_name,
+                                '컬럼명': col_name,
+                                '탐지된 개인정보': pattern_type,
+                                '건수': count
+                            })
+
+        if not report_data:
+            print("ℹ️ 엑셀로 내보낼 개인정보 탐지 결과가 없습니다.")
+            return
+
+        try:
+            df = pd.DataFrame(report_data)
+            excel_filename = f"privacy_scan_summary_{timestamp}.xlsx"
+            
+            with pd.ExcelWriter(excel_filename, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='개인정보_탐지_목록', index=False)
+
+                # 컬럼 너비 자동 조정
+                worksheet = writer.sheets['개인정보_탐지_목록']
+                for column_cells in worksheet.columns:
+                    max_length = 0
+                    column_letter = column_cells[0].column_letter
+                    
+                    for cell in column_cells:
+                        try:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                        except:
+                            pass
+                    
+                    adjusted_width = (max_length + 2)
+                    worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            print(f"📄 엑셀 요약 리포트가 {excel_filename}에 저장되었습니다.")
+
+        except Exception as e:
+            print(f"❌ 엑셀 파일 생성 중 오류가 발생했습니다: {e}")
+
     def save_results_with_summary(self, results: List[Dict], timestamp: str) -> None:
-        """결과를 JSON으로 저장하고 요약 리포트 생성"""
+        """결과를 JSON으로 저장하고 요약 리포트와 엑셀 파일을 생성합니다."""
         # JSON 파일 저장
         scan_filename = f"polars_privacy_scan_{timestamp}.json"
         with open(scan_filename, "w", encoding="utf-8") as f:
@@ -1041,6 +1100,9 @@ class PolarsPrivacyScanner:
             f.write(summary_report)
         
         print(f"📄 요약 리포트가 {summary_filename}에 저장되었습니다.")
+
+        # 엑셀 리포트 생성 추가
+        self.generate_excel_summary(results, timestamp)
 
     def is_system_schema(self, database_name: str) -> bool:
         """시스템 스키마인지 확인"""
@@ -1265,9 +1327,9 @@ if __name__ == "__main__":
     # Polars 기반 스캐너 초기화 (비밀번호 없이도 가능)
     scanner = PolarsPrivacyScanner(
         host="localhost",
-        user="root",
-        # password="fosslight",  # 비밀번호 없이도 접속 가능
-        port=9030,
+        user="fosslight",
+        password="fosslight",  # 비밀번호 없이도 접속 가능
+        port=3306,
         sample_size=100
     )
 
@@ -1321,6 +1383,7 @@ if __name__ == "__main__":
         print(f"📄 구조 분석: {analysis_filename}")
         print(f"📄 스캔 결과: polars_privacy_scan_{timestamp}.json")
         print(f"📄 요약 리포트: privacy_scan_summary_{timestamp}.txt")
+        print(f"📄 엑셀 요약: privacy_scan_summary_{timestamp}.xlsx")
 
     except KeyboardInterrupt:
         print("\n\n⚠️  사용자에 의해 중단되었습니다.")

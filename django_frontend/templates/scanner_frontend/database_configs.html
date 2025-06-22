@@ -1,0 +1,159 @@
+{% extends 'scanner_frontend/base.html' %}
+
+{% block title %}데이터베이스 설정 - 개인정보 스캐너{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="text-2xl font-bold mb-4">데이터베이스 설정 관리</h1>
+
+        <!-- Database Configurations List -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary">
+                <h5 class="card-title mb-0">저장된 데이터베이스 설정</h5>
+            </div>
+            <div class="p-6">
+                {% if configs %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th class="table-head">ID</th>
+                                <th class="table-head">이름</th>
+                                <th class="table-head">유형</th>
+                                <th class="table-head">호스트</th>
+                                <th class="table-head">포트</th>
+                                <th class="table-head">데이터베이스/서비스</th>
+                                <th class="table-head">사용자</th>
+                                <th class="table-head">작업</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for config in configs %}
+                            <tr class="table-row">
+                                <td class="table-cell">{{ config.id }}</td>
+                                <td class="table-cell">{{ config.name }}</td>
+                                <td class="table-cell">{{ config.db_type }}</td>
+                                <td class="table-cell">{{ config.host }}</td>
+                                <td class="table-cell">{{ config.port }}</td>
+                                <td class="table-cell">
+                                    {% if config.db_type == 'mysql' %}
+                                        {{ config.database }}
+                                    {% else %}
+                                        {{ config.service_name }}
+                                    {% endif %}
+                                </td>
+                                <td class="table-cell">{{ config.user }}</td>
+                                <td class="table-cell">
+                                    <a href="{% url 'scan_jobs' %}?config_id={{ config.id }}" class="btn btn-sm btn-success">스캔</a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted-foreground">저장된 데이터베이스 설정이 없습니다.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Create New Database Configuration -->
+        <div class="card">
+            <div class="card-header bg-success">
+                <h5 class="card-title mb-0">새 데이터베이스 설정 추가</h5>
+            </div>
+            <div class="p-6">
+                <form method="post" action="{% url 'database_configs' %}">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">설정 이름</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="db_type" class="form-label">데이터베이스 유형</label>
+                        <select class="form-select" id="db_type" name="db_type" required>
+                            <option value="mysql">MySQL</option>
+                            <option value="oracle">Oracle</option>
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-8 mb-3">
+                            <label for="host" class="form-label">호스트</label>
+                            <input type="text" class="form-control" id="host" name="host" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="port" class="form-label">포트</label>
+                            <input type="number" class="form-control" id="port" name="port" value="3306" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 mysql-field">
+                        <label for="database" class="form-label">데이터베이스 이름</label>
+                        <input type="text" class="form-control" id="database" name="database">
+                    </div>
+
+                    <div class="mb-3 oracle-field" style="display: none;">
+                        <label for="service_name" class="form-label">서비스 이름</label>
+                        <input type="text" class="form-control" id="service_name" name="service_name">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="user" class="form-label">사용자</label>
+                        <input type="text" class="form-control" id="user" name="user" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="password" class="form-label">비밀번호</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="sample_size" class="form-label">샘플 크기</label>
+                        <input type="number" class="form-control" id="sample_size" name="sample_size" value="100" min="10" max="1000" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">저장</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Toggle database/service name fields based on selected database type
+    document.addEventListener('DOMContentLoaded', function() {
+        var dbTypeSelect = document.getElementById('db_type');
+        var mysqlFields = document.querySelectorAll('.mysql-field');
+        var oracleFields = document.querySelectorAll('.oracle-field');
+
+        function toggleFields() {
+            if (dbTypeSelect.value === 'mysql') {
+                mysqlFields.forEach(function(field) {
+                    field.style.display = 'block';
+                });
+                oracleFields.forEach(function(field) {
+                    field.style.display = 'none';
+                });
+                document.getElementById('port').value = '3306';
+            } else {
+                mysqlFields.forEach(function(field) {
+                    field.style.display = 'none';
+                });
+                oracleFields.forEach(function(field) {
+                    field.style.display = 'block';
+                });
+                document.getElementById('port').value = '1521';
+            }
+        }
+
+        dbTypeSelect.addEventListener('change', toggleFields);
+        toggleFields(); // Initial toggle
+    });
+</script>
+{% endblock %}

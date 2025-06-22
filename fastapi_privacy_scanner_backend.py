@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -10,6 +10,7 @@ import json
 import os
 from enum import Enum
 import logging
+import sqlite3
 
 # 기존 스캐너 import (실제 구현시 분리된 모듈에서 import)
 # from polars_privacy_scanner import PolarsPrivacyScanner
@@ -41,6 +42,15 @@ security = HTTPBearer()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 데이터베이스 연결 함수 (여기로 이동)
+def get_db():
+    # check_same_thread=False allows SQLite connections to be used across different threads
+    # This is needed because FastAPI runs in a multi-threaded environment
+    conn = sqlite3.connect('database_configs.db', check_same_thread=False)
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 # Enum 정의
 class DatabaseType(str, Enum):
@@ -134,6 +144,76 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
 
 
 # 스캔 작업 실행 함수들
+@app.post("/scan/database-config/{config_id}", response_model=Dict[str, str])
+async def start_scan_with_config(
+    config_id: int,
+    background_tasks: BackgroundTasks,
+    conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """데이터베이스 설정 ID로 MySQL 스캔 작업 시작"""
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM database_configs WHERE id = ?', (config_id,))
+        result = cursor.fetchone()
+
+        if not result:
+            raise HTTPException(status_code=404, detail="데이터베이스 설정을 찾을 수 없습니다")
+
+        # Ensure the db_type is MySQL
+        db_type = result[2]
+        if db_type != DatabaseType.mysql.value:
+            raise HTTPException(status_code=400, detail="MySQL 데이터베이스 설정만 지원됩니다")
+
+        # Parse the database configuration
+        database_config = DatabaseConfig(
+            db_type=db_type,
+            host=result[3],
+            port=result[4],
+            database=result[5],
+            service_name=result[6],
+            user=result[7],
+            password=result[8],
+            sample_size=result[9]
+        )
+
+        # Create a new scan job
+        job_id = str(uuid.uuid4())
+        job_info = ScanJobInfo(
+            job_id=job_id,
+            scan_name=f"MySQL Scan for Config {config_id}",
+            status=ScanStatus.pending,
+            db_type=DatabaseType.mysql,
+            host=database_config.host,
+            database=database_config.database,
+            created_at=datetime.now()
+        )
+        scan_jobs[job_id] = job_info
+
+        # Start the scan in the background
+        background_tasks.add_task(run_mysql_scan, job_id, database_config)
+
+        # Update job status
+        scan_jobs[job_id].status = ScanStatus.running
+        scan_jobs[job_id].started_at = datetime.now()
+
+        logger.info(f"MySQL 스캔 작업 시작: {job_id}, Config ID: {config_id}")
+
+        return {
+            "job_id": job_id,
+            "message": "스캔 작업이 시작되었습니다.",
+            "status_url": f"/jobs/{job_id}",
+            "results_url": f"/results/{job_id}"
+        }
+
+    except (sqlite3.Error, ValueError) as e:
+        logger.error(f"Error starting scan with config ID {config_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"스캔 작업 시작 중 오류가 발생했습니다: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="내부 서버 오류가 발생했습니다")
+
+
 async def run_mysql_scan(job_id: str, config: DatabaseConfig):
     """MySQL 스캔 실행"""
     try:
@@ -266,6 +346,47 @@ async def run_oracle_scan(job_id: str, config: DatabaseConfig):
         scan_jobs[job_id].status = ScanStatus.failed
         scan_jobs[job_id].error_message = str(e)
 
+
+# 애플리케이션 시작 시 DB 초기화
+def init_db():
+    conn = sqlite3.connect('database_configs.db')
+    c = conn.cursor()
+
+    # 데이터베이스 설정 테이블 생성
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS database_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            db_type TEXT NOT NULL,
+            host TEXT NOT NULL,
+            port INTEGER NOT NULL,
+            database TEXT,
+            service_name TEXT,
+            user TEXT NOT NULL,
+            password TEXT NOT NULL,
+            sample_size INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    conn.commit()
+    conn.close()
+
+# 애플리케이션 시작 시 DB 초기화
+init_db()
+
+# Pydantic 모델 수정
+class DatabaseConfigCreate(DatabaseConfig):
+    name: str = Field(..., description="설정 이름")
+
+class DatabaseConfigResponse(DatabaseConfigCreate):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
 
 # API 엔드포인트들
 
@@ -475,6 +596,298 @@ async def get_statistics(current_user: dict = Depends(get_current_user)):
     }
 
 
+# API 엔드포인트 추가
+@app.post("/database-configs", response_model=DatabaseConfigResponse, status_code=status.HTTP_201_CREATED)
+async def create_database_config(
+    config: DatabaseConfigCreate,
+    conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """데이터베이스 설정 저장"""
+    try:
+        cursor = conn.cursor()
+
+        # Ensure db_type is a valid enum value
+        if config.db_type not in [e.value for e in DatabaseType]:
+            raise ValueError(f"Invalid database type: {config.db_type}")
+
+        # 설정 저장
+        cursor.execute('''
+            INSERT INTO database_configs 
+            (name, db_type, host, port, database, service_name, user, password, sample_size)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            config.name,
+            config.db_type,
+            config.host,
+            config.port,
+            config.database,
+            config.service_name,
+            config.user,
+            config.password,
+            config.sample_size
+        ))
+
+        conn.commit()
+        config_id = cursor.lastrowid
+
+        # 저장된 설정 조회
+        cursor.execute('''
+            SELECT * FROM database_configs WHERE id = ?
+        ''', (config_id,))
+
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="생성된 설정을 찾을 수 없습니다")
+
+        # Handle potential None values for optional fields
+        database = result[5] if result[5] is not None else None
+        service_name = result[6] if result[6] is not None else None
+
+        # Parse datetime strings safely
+        try:
+            created_at = datetime.strptime(result[10], '%Y-%m-%d %H:%M:%S')
+            updated_at = datetime.strptime(result[11], '%Y-%m-%d %H:%M:%S')
+        except ValueError as e:
+            logger.error(f"Error parsing datetime: {e}")
+            raise ValueError(f"Invalid datetime format: {e}")
+
+        return DatabaseConfigResponse(
+            id=result[0],
+            name=result[1],
+            db_type=result[2],
+            host=result[3],
+            port=result[4],
+            database=database,
+            service_name=service_name,
+            user=result[7],
+            password=result[8],
+            sample_size=result[9],
+            created_at=created_at,
+            updated_at=updated_at
+        )
+    except (sqlite3.Error, ValueError, TypeError, IndexError) as e:
+        logger.error(f"Error creating database config: {e}")
+        raise HTTPException(status_code=500, detail=f"데이터베이스 설정 생성 중 오류가 발생했습니다: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="내부 서버 오류가 발생했습니다")
+
+@app.get("/database-configs", response_model=List[DatabaseConfigResponse])
+async def list_database_configs(
+    conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """저장된 데이터베이스 설정 목록 조회"""
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM database_configs ORDER BY created_at DESC')
+
+        configs = []
+        for row in cursor.fetchall():
+            # Ensure db_type is a valid enum value
+            db_type = row[2]
+            if db_type not in [e.value for e in DatabaseType]:
+                logger.warning(f"Skipping config with invalid database type: {db_type}")
+                continue
+
+            # Handle potential None values for optional fields
+            database = row[5] if row[5] is not None else None
+            service_name = row[6] if row[6] is not None else None
+
+            # Parse datetime strings safely
+            try:
+                created_at = datetime.strptime(row[10], '%Y-%m-%d %H:%M:%S')
+                updated_at = datetime.strptime(row[11], '%Y-%m-%d %H:%M:%S')
+            except ValueError as e:
+                logger.warning(f"Skipping config with invalid datetime format: {e}")
+                continue
+
+            configs.append(DatabaseConfigResponse(
+                id=row[0],
+                name=row[1],
+                db_type=db_type,
+                host=row[3],
+                port=row[4],
+                database=database,
+                service_name=service_name,
+                user=row[7],
+                password=row[8],
+                sample_size=row[9],
+                created_at=created_at,
+                updated_at=updated_at
+            ))
+
+        return configs
+    except sqlite3.Error as e:
+        logger.error(f"Error listing database configs: {e}")
+        raise HTTPException(status_code=500, detail=f"데이터베이스 설정 목록 조회 중 오류가 발생했습니다: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="내부 서버 오류가 발생했습니다")
+
+@app.get("/database-configs/{config_id}", response_model=DatabaseConfigResponse)
+async def get_database_config(
+    config_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """특정 데이터베이스 설정 조회"""
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM database_configs WHERE id = ?', (config_id,))
+
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다")
+
+        # Ensure db_type is a valid enum value
+        db_type = result[2]
+        if db_type not in [e.value for e in DatabaseType]:
+            raise ValueError(f"Invalid database type: {db_type}")
+
+        # Handle potential None values for optional fields
+        database = result[5] if result[5] is not None else None
+        service_name = result[6] if result[6] is not None else None
+
+        # Parse datetime strings safely
+        try:
+            created_at = datetime.strptime(result[10], '%Y-%m-%d %H:%M:%S')
+            updated_at = datetime.strptime(result[11], '%Y-%m-%d %H:%M:%S')
+        except ValueError as e:
+            logger.error(f"Error parsing datetime: {e}")
+            raise ValueError(f"Invalid datetime format: {e}")
+
+        return DatabaseConfigResponse(
+            id=result[0],
+            name=result[1],
+            db_type=db_type,
+            host=result[3],
+            port=result[4],
+            database=database,
+            service_name=service_name,
+            user=result[7],
+            password=result[8],
+            sample_size=result[9],
+            created_at=created_at,
+            updated_at=updated_at
+        )
+    except (sqlite3.Error, ValueError, TypeError, IndexError) as e:
+        logger.error(f"Error retrieving database config: {e}")
+        raise HTTPException(status_code=500, detail=f"데이터베이스 설정 조회 중 오류가 발생했습니다: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="내부 서버 오류가 발생했습니다")
+
+@app.put("/database-configs/{config_id}", response_model=DatabaseConfigResponse)
+async def update_database_config(
+    config_id: int,
+    config: DatabaseConfigCreate,
+    conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """데이터베이스 설정 수정"""
+    try:
+        cursor = conn.cursor()
+
+        # 설정 존재 확인
+        cursor.execute('SELECT id FROM database_configs WHERE id = ?', (config_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다")
+
+        # Ensure db_type is a valid enum value
+        if config.db_type not in [e.value for e in DatabaseType]:
+            raise ValueError(f"Invalid database type: {config.db_type}")
+
+        # 설정 업데이트
+        cursor.execute('''
+            UPDATE database_configs 
+            SET name = ?, db_type = ?, host = ?, port = ?, database = ?, 
+                service_name = ?, user = ?, password = ?, sample_size = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ''', (
+            config.name,
+            config.db_type,
+            config.host,
+            config.port,
+            config.database,
+            config.service_name,
+            config.user,
+            config.password,
+            config.sample_size,
+            config_id
+        ))
+
+        conn.commit()
+
+        # 업데이트된 설정 조회
+        cursor.execute('SELECT * FROM database_configs WHERE id = ?', (config_id,))
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(status_code=404, detail="업데이트된 설정을 찾을 수 없습니다")
+
+        # Handle potential None values for optional fields
+        database = result[5] if result[5] is not None else None
+        service_name = result[6] if result[6] is not None else None
+
+        # Parse datetime strings safely
+        try:
+            created_at = datetime.strptime(result[10], '%Y-%m-%d %H:%M:%S')
+            updated_at = datetime.strptime(result[11], '%Y-%m-%d %H:%M:%S')
+        except ValueError as e:
+            logger.error(f"Error parsing datetime: {e}")
+            raise ValueError(f"Invalid datetime format: {e}")
+
+        return DatabaseConfigResponse(
+            id=result[0],
+            name=result[1],
+            db_type=result[2],
+            host=result[3],
+            port=result[4],
+            database=database,
+            service_name=service_name,
+            user=result[7],
+            password=result[8],
+            sample_size=result[9],
+            created_at=created_at,
+            updated_at=updated_at
+        )
+    except (sqlite3.Error, ValueError, TypeError, IndexError) as e:
+        logger.error(f"Error updating database config: {e}")
+        raise HTTPException(status_code=500, detail=f"데이터베이스 설정 수정 중 오류가 발생했습니다: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="내부 서버 오류가 발생했습니다")
+
+@app.delete("/database-configs/{config_id}")
+async def delete_database_config(
+    config_id: int,
+    conn: sqlite3.Connection = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """데이터베이스 설정 삭제"""
+    try:
+        cursor = conn.cursor()
+
+        # 설정 존재 확인
+        cursor.execute('SELECT id FROM database_configs WHERE id = ?', (config_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="설정을 찾을 수 없습니다")
+
+        # 설정 삭제
+        cursor.execute('DELETE FROM database_configs WHERE id = ?', (config_id,))
+        conn.commit()
+
+        return {"message": "설정이 삭제되었습니다"}
+    except sqlite3.Error as e:
+        logger.error(f"Error deleting database config: {e}")
+        raise HTTPException(status_code=500, detail=f"데이터베이스 설정 삭제 중 오류가 발생했습니다: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="내부 서버 오류가 발생했습니다")
+
+
 # 실행 설정
 if __name__ == "__main__":
     import uvicorn
@@ -485,5 +898,8 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=18000,
         reload=True,
-        log_level="info"
+        log_level="debug"
     )
+else:
+    # 프로덕션 환경에서 실행 (uvicorn이 자동으로 처리)
+    pass

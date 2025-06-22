@@ -1,0 +1,136 @@
+### API 상태 확인
+GET http://localhost:18000
+Accept: application/json
+
+### MySQL DB 스캔 시작
+POST http://localhost:18000/scan
+Authorization: Bearer your-secret-token
+Content-Type: application/json
+
+{
+  "config": {
+    "db_type": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "database": "test_db",
+    "user": "db_user",
+    "password": "db_password",
+    "sample_size": 100
+  },
+  "scan_name": "MySQL Privacy Scan",
+  "include_structure_analysis": true,
+  "include_privacy_scan": true,
+  "include_executive_summary": true
+}
+
+### Oracle DB 스캔 시작
+POST http://localhost:18000/scan
+Authorization: Bearer your-secret-token
+Content-Type: application/json
+
+{
+  "config": {
+    "db_type": "oracle",
+    "host": "localhost",
+    "port": 1521,
+    "service_name": "orcl",
+    "user": "system",
+    "password": "oracle_password",
+    "sample_size": 100
+  },
+  "scan_name": "Oracle Privacy Scan",
+  "include_structure_analysis": true,
+  "include_privacy_scan": true,
+  "include_executive_summary": true
+}
+
+### 모든 스캔 작업 목록 조회
+GET http://localhost:18000/jobs
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 특정 스캔 작업 상태 조회
+GET http://localhost:18000/jobs/{job_id}
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 스캔 작업 취소
+DELETE http://localhost:18000/jobs/{job_id}
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 스캔 결과 조회
+GET http://localhost:18000/results/{job_id}
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 스캔 결과 요약 조회
+GET http://localhost:18000/results/{job_id}/summary
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 스캔 결과 JSON 다운로드
+GET http://localhost:18000/results/{job_id}/download?format=json
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 스캔 결과 텍스트 다운로드
+GET http://localhost:18000/results/{job_id}/download?format=txt
+Authorization: Bearer your-secret-token
+Accept: text/plain
+
+### 헬스 체크
+GET http://localhost:18000/health
+Accept: application/json
+
+### 통계 조회
+GET http://localhost:18000/stats
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 데이터베이스 설정 생성
+POST http://localhost:18000/database-configs
+Authorization: Bearer your-secret-token
+Content-Type: application/json
+
+{
+  "name": "테스트 DB 설정",
+  "db_type": "mysql",
+  "host": "localhost",
+  "port": 3306,
+  "database": "test_db",
+  "user": "db_user",
+  "password": "db_password",
+  "sample_size": 100
+}
+
+### 데이터베이스 설정 목록 조회
+GET http://localhost:18000/database-configs
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 특정 데이터베이스 설정 조회
+GET http://localhost:18000/database-configs/1
+Authorization: Bearer your-secret-token
+Accept: application/json
+
+### 데이터베이스 설정 수정
+PUT http://localhost:18000/database-configs/1
+Authorization: Bearer your-secret-token
+Content-Type: application/json
+
+{
+  "name": "수정된 DB 설정",
+  "db_type": "mysql",
+  "host": "localhost",
+  "port": 3306,
+  "database": "updated_db",
+  "user": "db_user",
+  "password": "new_password",
+  "sample_size": 200
+}
+
+### 데이터베이스 설정 삭제
+DELETE http://localhost:18000/database-configs/1
+Authorization: Bearer your-secret-token
+Accept: application/json

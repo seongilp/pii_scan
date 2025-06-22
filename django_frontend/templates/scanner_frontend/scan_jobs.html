@@ -1,0 +1,278 @@
+{% extends 'scanner_frontend/base.html' %}
+
+{% block title %}스캔 작업 - 개인정보 스캐너{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">스캔 작업 관리</h1>
+        
+        <!-- Scan Jobs List -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="card-title mb-0">스캔 작업 목록</h5>
+            </div>
+            <div class="card-body">
+                {% if jobs %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>작업 ID</th>
+                                <th>스캔 이름</th>
+                                <th>상태</th>
+                                <th>DB 유형</th>
+                                <th>호스트</th>
+                                <th>진행률</th>
+                                <th>생성 시간</th>
+                                <th>작업</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for job in jobs %}
+                            <tr>
+                                <td>{{ job.job_id }}</td>
+                                <td>{{ job.scan_name }}</td>
+                                <td>
+                                    {% if job.status == 'pending' %}
+                                    <span class="badge bg-secondary">대기 중</span>
+                                    {% elif job.status == 'running' %}
+                                    <span class="badge bg-warning">실행 중</span>
+                                    {% elif job.status == 'completed' %}
+                                    <span class="badge bg-success">완료</span>
+                                    {% elif job.status == 'failed' %}
+                                    <span class="badge bg-danger">실패</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ job.db_type }}</td>
+                                <td>{{ job.host }}</td>
+                                <td>
+                                    {{ job.progress }}% <br>
+                                    <small>{{ job.current_step }}</small>
+                                </td>
+                                <td>{{ job.created_at }}</td>
+                                <td>
+                                    {% if job.status == 'completed' %}
+                                    <a href="{% url 'scan_results' job.job_id %}" class="btn btn-sm btn-primary">결과 보기</a>
+                                    {% elif job.status == 'running' %}
+                                    <form method="post" action="{% url 'scan_jobs' %}" style="display: inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="cancel">
+                                        <input type="hidden" name="job_id" value="{{ job.job_id }}">
+                                        <button type="submit" class="btn btn-sm btn-danger">취소</button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p>스캔 작업이 없습니다.</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- Start New Scan -->
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="card-title mb-0">새 스캔 시작</h5>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs" id="scanTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="saved-config-tab" data-bs-toggle="tab" data-bs-target="#saved-config" type="button" role="tab">저장된 설정 사용</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="manual-config-tab" data-bs-toggle="tab" data-bs-target="#manual-config" type="button" role="tab">수동 설정</button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content mt-3" id="scanTabsContent">
+                    <!-- Saved Configuration Tab -->
+                    <div class="tab-pane fade show active" id="saved-config" role="tabpanel">
+                        <form method="post" action="{% url 'scan_jobs' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="start_scan_with_config">
+                            
+                            <div class="mb-3">
+                                <label for="config_id" class="form-label">데이터베이스 설정 선택</label>
+                                <select class="form-select" id="config_id" name="config_id" required>
+                                    <option value="">-- 설정 선택 --</option>
+                                    {% for config in configs %}
+                                    <option value="{{ config.id }}">{{ config.name }} ({{ config.db_type }} - {{ config.host }})</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="scan_name" class="form-label">스캔 이름</label>
+                                <input type="text" class="form-control" id="scan_name" name="scan_name" placeholder="선택 사항">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="include_structure_analysis" name="include_structure_analysis" checked>
+                                    <label class="form-check-label" for="include_structure_analysis">
+                                        구조 분석 포함
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="include_privacy_scan" name="include_privacy_scan" checked>
+                                    <label class="form-check-label" for="include_privacy_scan">
+                                        개인정보 스캔 포함
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="include_executive_summary" name="include_executive_summary" checked>
+                                    <label class="form-check-label" for="include_executive_summary">
+                                        Executive Summary 포함
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary">스캔 시작</button>
+                        </form>
+                    </div>
+                    
+                    <!-- Manual Configuration Tab -->
+                    <div class="tab-pane fade" id="manual-config" role="tabpanel">
+                        <form method="post" action="{% url 'scan_jobs' %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="start_scan_manual">
+                            
+                            <div class="mb-3">
+                                <label for="scan_name_manual" class="form-label">스캔 이름</label>
+                                <input type="text" class="form-control" id="scan_name_manual" name="scan_name" placeholder="선택 사항">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="db_type" class="form-label">데이터베이스 유형</label>
+                                <select class="form-select" id="db_type" name="db_type" required>
+                                    <option value="mysql">MySQL</option>
+                                    <option value="oracle">Oracle</option>
+                                </select>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-8 mb-3">
+                                    <label for="host" class="form-label">호스트</label>
+                                    <input type="text" class="form-control" id="host" name="host" required>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="port" class="form-label">포트</label>
+                                    <input type="number" class="form-control" id="port" name="port" value="3306" required>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3 mysql-field">
+                                <label for="database" class="form-label">데이터베이스 이름</label>
+                                <input type="text" class="form-control" id="database" name="database">
+                            </div>
+                            
+                            <div class="mb-3 oracle-field" style="display: none;">
+                                <label for="service_name" class="form-label">서비스 이름</label>
+                                <input type="text" class="form-control" id="service_name" name="service_name">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="user" class="form-label">사용자</label>
+                                <input type="text" class="form-control" id="user" name="user" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="password" class="form-label">비밀번호</label>
+                                <input type="password" class="form-control" id="password" name="password" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="sample_size" class="form-label">샘플 크기</label>
+                                <input type="number" class="form-control" id="sample_size" name="sample_size" value="100" min="10" max="1000" required>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="include_structure_analysis_manual" name="include_structure_analysis" checked>
+                                    <label class="form-check-label" for="include_structure_analysis_manual">
+                                        구조 분석 포함
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="include_privacy_scan_manual" name="include_privacy_scan" checked>
+                                    <label class="form-check-label" for="include_privacy_scan_manual">
+                                        개인정보 스캔 포함
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="include_executive_summary_manual" name="include_executive_summary" checked>
+                                    <label class="form-check-label" for="include_executive_summary_manual">
+                                        Executive Summary 포함
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary">스캔 시작</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Toggle database/service name fields based on selected database type
+    document.addEventListener('DOMContentLoaded', function() {
+        var dbTypeSelect = document.getElementById('db_type');
+        var mysqlFields = document.querySelectorAll('.mysql-field');
+        var oracleFields = document.querySelectorAll('.oracle-field');
+        
+        function toggleFields() {
+            if (dbTypeSelect && dbTypeSelect.value === 'mysql') {
+                mysqlFields.forEach(function(field) {
+                    field.style.display = 'block';
+                });
+                oracleFields.forEach(function(field) {
+                    field.style.display = 'none';
+                });
+                var portField = document.getElementById('port');
+                if (portField) portField.value = '3306';
+            } else if (dbTypeSelect) {
+                mysqlFields.forEach(function(field) {
+                    field.style.display = 'none';
+                });
+                oracleFields.forEach(function(field) {
+                    field.style.display = 'block';
+                });
+                var portField = document.getElementById('port');
+                if (portField) portField.value = '1521';
+            }
+        }
+        
+        if (dbTypeSelect) {
+            dbTypeSelect.addEventListener('change', toggleFields);
+            toggleFields(); // Initial toggle
+        }
+        
+        // Auto-refresh the page every 10 seconds to update job status
+        setTimeout(function() {
+            location.reload();
+        }, 10000);
+    });
+</script>
+{% endblock %}
