@@ -28,6 +28,7 @@ def analyze_scan_preview(file_path: str):
 
     # 1. 전체 통계 요약
     total_db_count = len(analyses)
+    db_names = [db.get('database', 'Unknown') for db in analyses]
     total_summary = {
         'tables': sum(db.get('summary', {}).get('total_tables', 0) for db in analyses),
         'rows': sum(db.get('summary', {}).get('total_rows', 0) for db in analyses),
@@ -38,10 +39,34 @@ def analyze_scan_preview(file_path: str):
         'est_time_sec': sum(db.get('summary', {}).get('estimated_total_scan_time_sec', 0) for db in analyses),
     }
 
+    # 테이블 상태별 분류
+    scannable_tables_list = []
+    empty_tables_list = []
+    error_tables_list = []
+
+    for db in analyses:
+        db_name = db.get('database', 'Unknown')
+        for table_name, table_data in db.get('tables', {}).items():
+            full_table_name = f"{db_name}.{table_name}"
+            status = table_data.get('status')
+            if status == 'scannable':
+                scannable_tables_list.append(full_table_name)
+            elif status == 'empty':
+                empty_tables_list.append(full_table_name)
+            elif status == 'error':
+                error_msg = table_data.get('error', 'Unknown error')
+                error_tables_list.append({'name': full_table_name, 'error': error_msg})
+
     print("📈 전체 규모 요약")
-    print(f"  • 데이터베이스: {total_db_count}개")
-    print(f"  • 총 테이블: {total_summary['tables']:,}개 (스캔 가능: {total_summary['scannable_tables']:,}개)")
-    print(f"  • 총 행 수: {total_summary['rows']:,}행")
+    print(f"  • 데이터베이스: {total_db_count}개 ({', '.join(db_names)})")
+    print(f"  • 총 테이블: {total_summary['tables']:,}개")
+    print(f"    - 🟢 스캔 가능: {len(scannable_tables_list):,}개")
+    if empty_tables_list:
+        print(f"    - 🟡 스캔 제외 (빈 테이블): {len(empty_tables_list):,}개")
+    if error_tables_list:
+        print(f"    - 🔴 스캔 오류: {len(error_tables_list):,}개")
+
+    print(f"  • 총 행 수 (스캔 가능 테이블 기준): {total_summary['rows']:,}행")
     print(f"  • 총 컬럼 수: {total_summary['columns']:,}개")
     print(f"  • 대용량 테이블 (100만 행 이상): {total_summary['large_tables']:,}개")
     print("-" * 40)
@@ -52,6 +77,27 @@ def analyze_scan_preview(file_path: str):
     print(f"  • 예상 메모리 사용량 (샘플링 기반): {total_summary['est_mb']:.2f} MB")
     print(f"  • 예상 총 스캔 시간: {str(est_time)} ({total_summary['est_time_sec']:.2f}초)")
     print("-" * 80)
+
+    # 스캔 제외 테이블 정보 출력
+    if empty_tables_list or error_tables_list:
+        print("ℹ️ 스캔에서 제외된 테이블 상세 정보")
+        if empty_tables_list:
+            print(f"  [빈 테이블] ({len(empty_tables_list)}개) - 데이터가 없어 스캔에서 제외됩니다.")
+            tables_to_show = empty_tables_list[:5]
+            for t in tables_to_show:
+                print(f"    - {t}")
+            if len(empty_tables_list) > 5:
+                print(f"    ... 외 {len(empty_tables_list) - 5}개")
+        
+        if error_tables_list:
+            print(f"\n  [분석 오류 테이블] ({len(error_tables_list)}개) - 구조 분석 중 오류가 발생했습니다.")
+            tables_to_show = error_tables_list[:5]
+            for t in tables_to_show:
+                error_preview = t['error'].replace('\n', ' ').strip()[:70]
+                print(f"    - {t['name']}: {error_preview}...")
+            if len(error_tables_list) > 5:
+                print(f"    ... 외 {len(error_tables_list) - 5}개")
+        print("-" * 80)
 
     # 3. 비용 높은 테이블 식별
     high_cost_tables = []
