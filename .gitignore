@@ -43,7 +43,7 @@ ehthumbs.db
 Thumbs.db
 
 # Project specific - 스캔 결과 파일들
-*.json
+#*.json
 *.txt
 *.log
 *.db

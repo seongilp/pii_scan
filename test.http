@@ -139,3 +139,20 @@ Content-Type: application/json
 DELETE http://localhost:18000/database-configs/1
 Authorization: Bearer your-secret-token
 Accept: application/json
+
+
+### 데이터베이스 연결 테스트
+POST http://localhost:18000/test-connection
+Authorization: Bearer your-secret-token
+Content-Type: application/json
+
+{
+  "db_type": "mysql",
+  "host": "localhost",
+  "port": 3306,
+  "database": "fosslight",
+  "user": "fosslight",
+  "password": "fosslight",
+  "service_name": null,
+  "sample_size": 100
+}
