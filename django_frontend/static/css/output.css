@@ -452,21 +452,21 @@ h1, h2, h3, h4, h5, h6 {
     color: hsl(var(--primary-foreground));
     cursor: pointer;
   }
-  
+
   .navbar-collapse {
     display: none;
   }
-  
+
   .navbar-collapse.show {
     display: block;
     width: 100%;
   }
-  
+
   .navbar-nav {
     flex-direction: column;
     width: 100%;
   }
-  
+
   .nav-item {
     margin-right: 0;
     margin-bottom: 0.5rem;
@@ -492,4 +492,25 @@ h1, h2, h3, h4, h5, h6 {
 
 .text-muted {
   color: hsl(var(--muted-foreground));
+}
+
+/* Utility classes */
+.hidden {
+  display: none;
+}
+
+.ml-auto {
+  margin-left: auto;
+}
+
+.flex {
+  display: flex;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
 }
