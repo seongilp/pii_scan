@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import asyncio
 import uuid
 from datetime import datetime
@@ -11,6 +11,11 @@ import os
 from enum import Enum
 import logging
 import sqlite3
+import requests
+import pymysql
+import cx_Oracle
+import psycopg2
+from contextlib import contextmanager
 
 # 기존 스캐너 import (실제 구현시 분리된 모듈에서 import)
 # from polars_privacy_scanner import PolarsPrivacyScanner
@@ -887,6 +892,413 @@ async def delete_database_config(
         logger.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="내부 서버 오류가 발생했습니다")
 
+
+# 새로운 API 엔드포인트들 추가
+
+# 데이터베이스 연결 테스트 API
+@app.post("/test-connection")
+async def test_database_connection(
+    config: DatabaseConfig,
+    current_user: dict = Depends(get_current_user)
+):
+    """데이터베이스 연결 테스트"""
+    try:
+        if config.db_type == DatabaseType.mysql:
+            return await test_mysql_connection(config)
+        elif config.db_type == DatabaseType.oracle:
+            return await test_oracle_connection(config)
+        else:
+            raise HTTPException(status_code=400, detail="지원되지 않는 데이터베이스 유형입니다")
+    except Exception as e:
+        logger.error(f"Connection test failed: {e}")
+        return {
+            "success": False,
+            "message": f"연결 실패: {str(e)}",
+            "details": str(e)
+        }
+
+async def test_mysql_connection(config: DatabaseConfig):
+    """MySQL 연결 테스트"""
+    try:
+        import pymysql
+        
+        connection = pymysql.connect(
+            host=config.host,
+            port=config.port,
+            user=config.user,
+            password=config.password,
+            database=config.database,
+            connect_timeout=10
+        )
+        
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT VERSION()")
+            version = cursor.fetchone()
+            
+        connection.close()
+        
+        return {
+            "success": True,
+            "message": "MySQL 연결 성공",
+            "database_info": {
+                "version": version[0] if version else "Unknown",
+                "host": config.host,
+                "port": config.port,
+                "database": config.database
+            }
+        }
+    except Exception as e:
+        raise Exception(f"MySQL 연결 실패: {str(e)}")
+
+async def test_oracle_connection(config: DatabaseConfig):
+    """Oracle 연결 테스트"""
+    try:
+        import cx_Oracle
+        
+        dsn = cx_Oracle.makedsn(config.host, config.port, service_name=config.service_name)
+        connection = cx_Oracle.connect(
+            user=config.user,
+            password=config.password,
+            dsn=dsn
+        )
+        
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM v$version WHERE ROWNUM = 1")
+            version = cursor.fetchone()
+            
+        connection.close()
+        
+        return {
+            "success": True,
+            "message": "Oracle 연결 성공",
+            "database_info": {
+                "version": version[0] if version else "Unknown",
+                "host": config.host,
+                "port": config.port,
+                "service_name": config.service_name
+            }
+        }
+    except Exception as e:
+        raise Exception(f"Oracle 연결 실패: {str(e)}")
+
+# 개인정보 패턴 관리 API
+class PrivacyPattern(BaseModel):
+    id: Optional[int] = None
+    name: str
+    category: str
+    pattern: str
+    risk_level: RiskLevel
+    description: str
+    examples: List[str]
+    is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+# 메모리 저장소 (실제로는 DB 사용)
+privacy_patterns: Dict[int, PrivacyPattern] = {}
+pattern_counter = 1
+
+@app.get("/patterns", response_model=List[PrivacyPattern])
+async def list_privacy_patterns(
+    category: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """개인정보 패턴 목록 조회"""
+    patterns = list(privacy_patterns.values())
+    
+    # 필터링
+    if category and category != "전체":
+        patterns = [p for p in patterns if p.category == category]
+    
+    if risk_level and risk_level != "전체":
+        patterns = [p for p in patterns if p.risk_level.value == risk_level]
+    
+    if search:
+        patterns = [p for p in patterns if search.lower() in p.name.lower() or search.lower() in p.description.lower()]
+    
+    return patterns
+
+@app.post("/patterns", response_model=PrivacyPattern)
+async def create_privacy_pattern(
+    pattern: PrivacyPattern,
+    current_user: dict = Depends(get_current_user)
+):
+    """개인정보 패턴 생성"""
+    global pattern_counter
+    
+    pattern.id = pattern_counter
+    pattern.created_at = datetime.now()
+    pattern.updated_at = datetime.now()
+    
+    privacy_patterns[pattern_counter] = pattern
+    pattern_counter += 1
+    
+    return pattern
+
+@app.put("/patterns/{pattern_id}", response_model=PrivacyPattern)
+async def update_privacy_pattern(
+    pattern_id: int,
+    pattern: PrivacyPattern,
+    current_user: dict = Depends(get_current_user)
+):
+    """개인정보 패턴 수정"""
+    if pattern_id not in privacy_patterns:
+        raise HTTPException(status_code=404, detail="패턴을 찾을 수 없습니다")
+    
+    pattern.id = pattern_id
+    pattern.updated_at = datetime.now()
+    privacy_patterns[pattern_id] = pattern
+    
+    return pattern
+
+@app.delete("/patterns/{pattern_id}")
+async def delete_privacy_pattern(
+    pattern_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """개인정보 패턴 삭제"""
+    if pattern_id not in privacy_patterns:
+        raise HTTPException(status_code=404, detail="패턴을 찾을 수 없습니다")
+    
+    del privacy_patterns[pattern_id]
+    return {"message": "패턴이 삭제되었습니다"}
+
+# 기본 패턴 초기화
+def init_default_patterns():
+    """기본 개인정보 패턴 초기화"""
+    default_patterns = [
+        PrivacyPattern(
+            name="이메일 주소",
+            category="연락처",
+            pattern=r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
+            risk_level=RiskLevel.medium,
+            description="일반적인 이메일 주소 형식을 감지합니다",
+            examples=["user@example.com", "test.email@domain.co.kr"],
+            created_at=datetime.now()
+        ),
+        PrivacyPattern(
+            name="전화번호",
+            category="연락처",
+            pattern=r"(\+82|0)[0-9]{1,2}-?[0-9]{3,4}-?[0-9]{4}",
+            risk_level=RiskLevel.medium,
+            description="한국 전화번호 형식을 감지합니다",
+            examples=["010-1234-5678", "+82-10-1234-5678"],
+            created_at=datetime.now()
+        ),
+        PrivacyPattern(
+            name="주민등록번호",
+            category="신원정보",
+            pattern=r"[0-9]{6}-[1-4][0-9]{6}",
+            risk_level=RiskLevel.high,
+            description="한국 주민등록번호 형식을 감지합니다",
+            examples=["123456-1234567", "123456-2345678"],
+            created_at=datetime.now()
+        ),
+        PrivacyPattern(
+            name="신용카드번호",
+            category="금융정보",
+            pattern=r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b",
+            risk_level=RiskLevel.high,
+            description="Visa, MasterCard, American Express 등 신용카드 번호를 감지합니다",
+            examples=["4111-1111-1111-1111", "5555-5555-5555-4444"],
+            created_at=datetime.now()
+        ),
+        PrivacyPattern(
+            name="계좌번호",
+            category="금융정보",
+            pattern=r"\b[0-9]{10,14}\b",
+            risk_level=RiskLevel.medium,
+            description="은행 계좌번호 형식을 감지합니다",
+            examples=["123-456789-01-234", "123456789012"],
+            created_at=datetime.now()
+        )
+    ]
+    
+    for i, pattern in enumerate(default_patterns, 1):
+        pattern.id = i
+        privacy_patterns[i] = pattern
+
+# 통계 분석 API
+@app.get("/analytics/overview")
+async def get_analytics_overview(current_user: dict = Depends(get_current_user)):
+    """전체 통계 개요"""
+    total_jobs = len(scan_jobs)
+    completed_jobs = len([j for j in scan_jobs.values() if j.status == ScanStatus.completed])
+    failed_jobs = len([j for j in scan_jobs.values() if j.status == ScanStatus.failed])
+    running_jobs = len([j for j in scan_jobs.values() if j.status == ScanStatus.running])
+    
+    # 데이터베이스 유형별 통계
+    db_stats = {}
+    for job in scan_jobs.values():
+        db_type = job.db_type.value
+        if db_type not in db_stats:
+            db_stats[db_type] = {"total": 0, "completed": 0, "failed": 0}
+        db_stats[db_type]["total"] += 1
+        if job.status == ScanStatus.completed:
+            db_stats[db_type]["completed"] += 1
+        elif job.status == ScanStatus.failed:
+            db_stats[db_type]["failed"] += 1
+    
+    # 월별 통계 (최근 6개월)
+    monthly_stats = {}
+    for job in scan_jobs.values():
+        month_key = job.created_at.strftime("%Y-%m")
+        if month_key not in monthly_stats:
+            monthly_stats[month_key] = {"total": 0, "completed": 0, "failed": 0}
+        monthly_stats[month_key]["total"] += 1
+        if job.status == ScanStatus.completed:
+            monthly_stats[month_key]["completed"] += 1
+        elif job.status == ScanStatus.failed:
+            monthly_stats[month_key]["failed"] += 1
+    
+    return {
+        "total_jobs": total_jobs,
+        "completed_jobs": completed_jobs,
+        "failed_jobs": failed_jobs,
+        "running_jobs": running_jobs,
+        "success_rate": (completed_jobs / total_jobs * 100) if total_jobs > 0 else 0,
+        "database_stats": db_stats,
+        "monthly_stats": monthly_stats,
+        "active_patterns": len([p for p in privacy_patterns.values() if p.is_active]),
+        "total_patterns": len(privacy_patterns)
+    }
+
+@app.get("/analytics/patterns")
+async def get_pattern_analytics(current_user: dict = Depends(get_current_user)):
+    """패턴별 통계"""
+    pattern_stats = {}
+    
+    # 각 패턴별 감지 횟수 계산 (실제로는 스캔 결과에서 계산)
+    for pattern in privacy_patterns.values():
+        pattern_stats[pattern.name] = {
+            "category": pattern.category,
+            "risk_level": pattern.risk_level.value,
+            "detection_count": 0,  # 실제 구현시 스캔 결과에서 계산
+            "is_active": pattern.is_active
+        }
+    
+    return {
+        "patterns": pattern_stats,
+        "categories": list(set(p.category for p in privacy_patterns.values())),
+        "risk_levels": [level.value for level in RiskLevel]
+    }
+
+# 설정 관리 API
+class AppSettings(BaseModel):
+    backend_url: str = "http://localhost:8000"
+    api_version: str = "v1"
+    api_token: str = "your-secret-token"
+    connection_timeout: int = 30
+    auto_reconnect: bool = True
+    scan_endpoint: str = "/scan"
+    jobs_endpoint: str = "/jobs"
+    results_endpoint: str = "/results"
+    config_endpoint: str = "/database-configs"
+    health_endpoint: str = "/health"
+
+# 메모리 저장소 (실제로는 DB 사용)
+app_settings = AppSettings()
+
+@app.get("/settings")
+async def get_app_settings(current_user: dict = Depends(get_current_user)):
+    """앱 설정 조회"""
+    return app_settings
+
+@app.put("/settings")
+async def update_app_settings(
+    settings: AppSettings,
+    current_user: dict = Depends(get_current_user)
+):
+    """앱 설정 업데이트"""
+    global app_settings
+    app_settings = settings
+    return {"message": "설정이 업데이트되었습니다"}
+
+# 대시보드 API
+@app.get("/dashboard")
+async def get_dashboard_data(current_user: dict = Depends(get_current_user)):
+    """대시보드 데이터"""
+    total_jobs = len(scan_jobs)
+    completed_jobs = len([j for j in scan_jobs.values() if j.status == ScanStatus.completed])
+    running_jobs = len([j for j in scan_jobs.values() if j.status == ScanStatus.running])
+    
+    # 최근 스캔 작업 (최근 5개)
+    recent_jobs = []
+    for job in sorted(scan_jobs.values(), key=lambda x: x.created_at, reverse=True)[:5]:
+        recent_jobs.append({
+            "id": job.job_id,
+            "name": job.scan_name or f"{job.db_type.value} Scan",
+            "status": job.status.value,
+            "database": job.db_type.value,
+            "host": job.host,
+            "created_at": job.created_at.isoformat(),
+            "progress": job.progress
+        })
+    
+    # 개인정보 패턴 분포 (더미 데이터)
+    pattern_distribution = {
+        "이메일 주소": 156,
+        "전화번호": 89,
+        "주민등록번호": 23,
+        "신용카드번호": 12,
+        "계좌번호": 67
+    }
+    
+    return {
+        "stats": {
+            "total_jobs": total_jobs,
+            "completed_jobs": completed_jobs,
+            "running_jobs": running_jobs,
+            "high_risk_patterns": 12
+        },
+        "recent_jobs": recent_jobs,
+        "pattern_distribution": pattern_distribution
+    }
+
+# 스캔 작업 일괄 관리 API
+@app.post("/jobs/batch")
+async def batch_job_operations(
+    job_ids: List[str],
+    operation: str,  # "cancel", "delete", "retry"
+    current_user: dict = Depends(get_current_user)
+):
+    """스캔 작업 일괄 관리"""
+    results = []
+    
+    for job_id in job_ids:
+        if job_id not in scan_jobs:
+            results.append({"job_id": job_id, "success": False, "message": "작업을 찾을 수 없습니다"})
+            continue
+        
+        try:
+            if operation == "cancel":
+                job = scan_jobs[job_id]
+                if job.status == ScanStatus.running:
+                    job.status = ScanStatus.failed
+                    job.error_message = "사용자에 의해 취소됨"
+                    results.append({"job_id": job_id, "success": True, "message": "작업이 취소되었습니다"})
+                else:
+                    results.append({"job_id": job_id, "success": False, "message": "취소할 수 없는 상태입니다"})
+            
+            elif operation == "delete":
+                del scan_jobs[job_id]
+                if job_id in scan_results:
+                    del scan_results[job_id]
+                results.append({"job_id": job_id, "success": True, "message": "작업이 삭제되었습니다"})
+            
+            elif operation == "retry":
+                # 재시도 로직 (실제 구현 필요)
+                results.append({"job_id": job_id, "success": True, "message": "재시도 요청이 등록되었습니다"})
+            
+        except Exception as e:
+            results.append({"job_id": job_id, "success": False, "message": str(e)})
+    
+    return {"results": results}
+
+# 초기화 함수 호출
+init_default_patterns()
 
 # 실행 설정
 if __name__ == "__main__":

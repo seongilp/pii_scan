@@ -2,6 +2,11 @@
 GET http://localhost:18000
 Accept: application/json
 
+### dahboard
+GET http://localhost:18000/dashboard
+Authorization: Bearer your-secret-token
+Accept: application/json
+
 ### MySQL DB 스캔 시작
 POST http://localhost:18000/scan
 Authorization: Bearer your-secret-token

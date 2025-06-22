@@ -1,5 +1,8 @@
+"use client";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { 
   Database, 
   FileText, 
@@ -10,14 +13,91 @@ import {
   CheckCircle,
   Clock
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { getApiClient } from "@/lib/api";
+
+interface DashboardData {
+  stats: {
+    total_jobs: number;
+    completed_jobs: number;
+    running_jobs: number;
+    high_risk_patterns: number;
+  };
+  recent_jobs: Array<{
+    id: string;
+    name: string;
+    status: string;
+    database: string;
+    host: string;
+    created_at: string;
+    progress: number;
+  }>;
+  pattern_distribution: Record<string, number>;
+}
 
 export default function DashboardPage() {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      const client = getApiClient();
+      const result = await client.getDashboard();
+
+      if ((result.success && result.data) || (typeof result === "object" && result !== null && "stats" in result)) {
+        setData(result.data || result);
+        setError(null);
+      } else {
+        setError(result.error || '데이터를 불러올 수 없습니다');
+      }
+    } catch (err) {
+      setError('서버 연결에 실패했습니다');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex-1 space-y-4 p-8 pt-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">데이터를 불러오는 중...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 space-y-4 p-8 pt-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">{error}</p>
+            <Button onClick={loadDashboardData}>다시 시도</Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
   return (
     <div className="flex-1 space-y-4 p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">대시보드</h2>
         <div className="flex items-center space-x-2">
-          <Button>새 스캔 시작</Button>
+          <Button onClick={loadDashboardData}>새로고침</Button>
         </div>
       </div>
       
@@ -28,9 +108,9 @@ export default function DashboardPage() {
             <Database className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24</div>
+            <div className="text-2xl font-bold">{data.stats.total_jobs}</div>
             <p className="text-xs text-muted-foreground">
-              +2 from last month
+              전체 스캔 작업 수
             </p>
           </CardContent>
         </Card>
@@ -40,9 +120,9 @@ export default function DashboardPage() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">18</div>
+            <div className="text-2xl font-bold">{data.stats.completed_jobs}</div>
             <p className="text-xs text-muted-foreground">
-              +4 from last month
+              성공적으로 완료된 작업
             </p>
           </CardContent>
         </Card>
@@ -52,9 +132,9 @@ export default function DashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3</div>
+            <div className="text-2xl font-bold">{data.stats.running_jobs}</div>
             <p className="text-xs text-muted-foreground">
-              +1 from last month
+              현재 실행 중인 작업
             </p>
           </CardContent>
         </Card>
@@ -64,9 +144,9 @@ export default function DashboardPage() {
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12</div>
+            <div className="text-2xl font-bold">{data.stats.high_risk_patterns}</div>
             <p className="text-xs text-muted-foreground">
-              -2 from last month
+              발견된 고위험 패턴
             </p>
           </CardContent>
         </Card>
@@ -79,32 +159,36 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {[
-                { name: "MySQL Production DB", status: "completed", time: "2시간 전", risk: "중간" },
-                { name: "Oracle HR System", status: "running", time: "30분 전", risk: "높음" },
-                { name: "PostgreSQL Analytics", status: "pending", time: "1시간 전", risk: "낮음" },
-              ].map((job, i) => (
-                <div key={i} className="flex items-center space-x-4">
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-medium leading-none">{job.name}</p>
-                    <p className="text-sm text-muted-foreground">{job.time}</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      job.status === 'completed' ? 'bg-green-100 text-green-800' :
-                      job.status === 'running' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {job.status === 'completed' ? '완료' :
-                       job.status === 'running' ? '진행중' : '대기중'}
-                    </span>
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      job.risk === '높음' ? 'bg-red-100 text-red-800' :
-                      job.risk === '중간' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-green-100 text-green-800'
-                    }`}>
-                      {job.risk} 위험
-                    </span>
+              {data.recent_jobs.map((job) => (
+                <div key={job.id} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <h3 className="font-medium">{job.name}</h3>
+                      <Badge variant={
+                        job.status === 'completed' ? 'default' :
+                        job.status === 'running' ? 'secondary' :
+                        job.status === 'pending' ? 'outline' : 'destructive'
+                      }>
+                        {job.status === 'completed' ? '완료' :
+                         job.status === 'running' ? '진행중' :
+                         job.status === 'pending' ? '대기중' : '실패'}
+                      </Badge>
+                      <Badge variant="outline">{job.database}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {job.host} • {new Date(job.created_at).toLocaleString('ko-KR')}
+                    </p>
+                    {job.status === 'running' && (
+                      <div className="mt-2">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div 
+                            className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
+                            style={{ width: `${job.progress}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">{job.progress}% 완료</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -114,28 +198,19 @@ export default function DashboardPage() {
         <Card className="col-span-3">
           <CardHeader>
             <CardTitle>개인정보 패턴 분포</CardTitle>
-            <CardDescription>
-              발견된 개인정보 패턴 유형별 통계
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {[
-                { pattern: "이메일 주소", count: 156, percentage: 35 },
-                { pattern: "전화번호", count: 89, percentage: 20 },
-                { pattern: "주민등록번호", count: 23, percentage: 5 },
-                { pattern: "신용카드번호", count: 12, percentage: 3 },
-                { pattern: "계좌번호", count: 67, percentage: 15 },
-              ].map((item, i) => (
-                <div key={i} className="space-y-2">
+              {Object.entries(data.pattern_distribution).map(([pattern, count]) => (
+                <div key={pattern} className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{item.pattern}</span>
-                    <span className="text-sm text-muted-foreground">{item.count}</span>
+                    <span className="text-sm font-medium">{pattern}</span>
+                    <span className="text-sm text-muted-foreground">{count}</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full" 
-                      style={{ width: `${item.percentage}%` }}
+                      style={{ width: `${(count / Math.max(...Object.values(data.pattern_distribution))) * 100}%` }}
                     ></div>
                   </div>
                 </div>

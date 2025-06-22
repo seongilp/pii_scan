@@ -6,13 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Database, Play, Settings, TestTube, CheckCircle, XCircle, Eye, EyeOff } from "lucide-react";
+import { Database, Play, Settings, TestTube, CheckCircle, XCircle, Eye, EyeOff, Info } from "lucide-react";
 import { useState } from "react";
 
 export default function ScanPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [noPassword, setNoPassword] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [cron, setCron] = useState("");
 
   const testConnection = async () => {
     setConnectionStatus('testing');
@@ -114,6 +115,24 @@ export default function ScanPage() {
               <Input id="sample-size" placeholder="100" />
             </div>
 
+            {/* 스캔 주기 (cron) 입력 */}
+            <div className="space-y-2">
+              <Label htmlFor="scan-cron">스캔 주기 (cron)</Label>
+              <Input
+                id="scan-cron"
+                placeholder="0 0 * * *"
+                value={cron}
+                onChange={e => setCron(e.target.value)}
+              />
+              <div className="flex items-start text-xs text-muted-foreground gap-2 mt-1">
+                <Info className="h-4 w-4 mt-0.5" />
+                <span>
+                  예시: <code>0 0 * * * (매일 0시)</code>, <code>0 */6 * * * (6시간마다)</code>, <code>30 9 * * 1-5 (평일 오전 9:30)</code><br/>
+                  <span className="text-[11px]">cron 형식: 분 시 일 월 요일</span>
+                </span>
+              </div>
+            </div>
+
             <div className="flex items-center space-x-4">
               <Button 
                 variant="outline" 
@@ -152,6 +171,10 @@ export default function ScanPage() {
               <Button className="flex-1">
                 <Play className="mr-2 h-4 w-4" />
                 스캔 시작
+              </Button>
+              <Button variant="outline" className="flex-1">
+                <Settings className="mr-2 h-4 w-4" />
+                스캔 저장
               </Button>
               <Button variant="outline">
                 <Settings className="mr-2 h-4 w-4" />

@@ -27,31 +27,124 @@ import {
   CheckCircle,
   XCircle
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { testBackendConnection } from "@/lib/api";
+import { useApi } from "@/contexts/ApiContext";
 
 export default function SettingsPage() {
+  const { config, updateConfig, isConnected, testConnection } = useApi();
+  const [showPassword, setShowPassword] = useState(false);
   const [showToken, setShowToken] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testResult, setTestResult] = useState<{ success: boolean; error?: string; details?: any } | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  
+  // 설정 상태
+  const [settings, setSettings] = useState({
+    backendUrl: 'http://localhost:18000',
+    apiVersion: 'v1',
+    apiToken: 'your-secret-token',
+    connectionTimeout: 30,
+    autoReconnect: true,
+    scanEndpoint: '/scan',
+    jobsEndpoint: '/jobs',
+    resultsEndpoint: '/results',
+    configEndpoint: '/database-configs',
+    healthEndpoint: '/health'
+  });
 
-  const testConnection = async () => {
-    setConnectionStatus('testing');
-    // 실제로는 여기서 백엔드 연결을 테스트합니다
-    setTimeout(() => {
-      setConnectionStatus('success');
-      setTimeout(() => setConnectionStatus('idle'), 2000);
-    }, 1000);
+  // 설정 로드 (로컬 스토리지에서)
+  useEffect(() => {
+    const savedSettings = localStorage.getItem('app-settings');
+    if (savedSettings) {
+      try {
+        const parsed = JSON.parse(savedSettings);
+        setSettings(prev => ({ ...prev, ...parsed }));
+      } catch (error) {
+        console.error('설정 로드 실패:', error);
+      }
+    }
+  }, []);
+
+  // 설정 저장
+  const saveSettings = () => {
+    localStorage.setItem('app-settings', JSON.stringify(settings));
+    // 여기서 실제 API 호출로 설정을 서버에 저장할 수도 있습니다
   };
+
+  const handleSave = () => {
+    // TODO: Implement save logic
+    console.log('Saved settings:', settings);
+    // 상태를 업데이트하고 localStorage에 저장
+    updateConfig({
+      baseUrl: settings.backendUrl,
+      token: settings.apiToken,
+      timeout: settings.connectionTimeout
+    });
+    // 여기서 testConnection을 다시 호출하여 isConnected 상태를 업데이트 할 수 있습니다.
+  };
+
+  const handleTestConnection = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    
+    try {
+      const result = await testConnection();
+      setTestResult(result);
+      
+      if (result.success) {
+        console.log("✅ 연결 성공");
+      } else {
+        console.error("❌ 연결 실패", result.error || "알 수 없는 오류가 발생했습니다.");
+      }
+    } catch (error) {
+      setTestResult({ 
+        success: false, 
+        error: error instanceof Error ? error.message : '알 수 없는 오류' 
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  // 현재 API 컨텍스트의 설정을 로컬 상태로 동기화
+  useEffect(() => {
+    setSettings({
+      backendUrl: config.baseUrl || 'http://localhost:18000',
+      apiVersion: 'v1', // 이 값은 config에 추가해야 할 수 있습니다.
+      apiToken: config.token || 'your-secret-token',
+      connectionTimeout: config.timeout || 30,
+      autoReconnect: true,
+      scanEndpoint: '/scan',
+      jobsEndpoint: '/jobs',
+      resultsEndpoint: '/results',
+      configEndpoint: '/database-configs',
+      healthEndpoint: '/health'
+    });
+  }, [config]);
 
   return (
     <div className="flex-1 space-y-6 p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
         <h2 className="text-3xl font-bold tracking-tight">설정</h2>
         <div className="flex items-center space-x-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => {
+            setSettings({
+              backendUrl: 'http://localhost:18000',
+              apiVersion: 'v1',
+              apiToken: 'your-secret-token',
+              connectionTimeout: 30,
+              autoReconnect: true,
+              scanEndpoint: '/scan',
+              jobsEndpoint: '/jobs',
+              resultsEndpoint: '/results',
+              configEndpoint: '/database-configs',
+              healthEndpoint: '/health'
+            });
+          }}>
             <RefreshCw className="mr-2 h-4 w-4" />
             기본값으로 복원
           </Button>
-          <Button>
+          <Button onClick={saveSettings}>
             <Save className="mr-2 h-4 w-4" />
             설정 저장
           </Button>
@@ -76,8 +169,9 @@ export default function SettingsPage() {
                 <Label htmlFor="backend-url">백엔드 서버 URL</Label>
                 <Input 
                   id="backend-url" 
-                  placeholder="http://localhost:8000"
-                  defaultValue="http://localhost:8000"
+                  placeholder="http://localhost:18000"
+                  value={settings.backendUrl}
+                  onChange={(e) => setSettings(prev => ({ ...prev, backendUrl: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
@@ -85,7 +179,8 @@ export default function SettingsPage() {
                 <Input 
                   id="api-version" 
                   placeholder="v1"
-                  defaultValue="v1"
+                  value={settings.apiVersion}
+                  onChange={(e) => setSettings(prev => ({ ...prev, apiVersion: e.target.value }))}
                 />
               </div>
             </div>
@@ -97,7 +192,8 @@ export default function SettingsPage() {
                   id="api-token" 
                   type={showToken ? "text" : "password"}
                   placeholder="your-secret-token"
-                  defaultValue="your-secret-token"
+                  value={settings.apiToken}
+                  onChange={(e) => setSettings(prev => ({ ...prev, apiToken: e.target.value }))}
                 />
                 <Button 
                   variant="ghost" 
@@ -116,10 +212,10 @@ export default function SettingsPage() {
             <div className="flex items-center space-x-4">
               <Button 
                 variant="outline" 
-                onClick={testConnection}
-                disabled={connectionStatus === 'testing'}
+                onClick={handleTestConnection}
+                disabled={isTesting}
               >
-                {connectionStatus === 'testing' ? (
+                {isTesting ? (
                   <>
                     <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                     연결 테스트 중...
@@ -132,17 +228,10 @@ export default function SettingsPage() {
                 )}
               </Button>
               
-              {connectionStatus === 'success' && (
+              {testResult && (
                 <div className="flex items-center space-x-2 text-green-600">
                   <CheckCircle className="h-4 w-4" />
-                  <span className="text-sm">연결 성공!</span>
-                </div>
-              )}
-              
-              {connectionStatus === 'error' && (
-                <div className="flex items-center space-x-2 text-red-600">
-                  <XCircle className="h-4 w-4" />
-                  <span className="text-sm">연결 실패</span>
+                  <span className="text-sm">{testResult.success ? "연결 성공" : testResult.error}</span>
                 </div>
               )}
             </div>
@@ -159,7 +248,10 @@ export default function SettingsPage() {
                       연결이 끊어졌을 때 자동으로 재연결을 시도합니다
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={settings.autoReconnect}
+                    onCheckedChange={(checked) => setSettings(prev => ({ ...prev, autoReconnect: checked }))}
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="space-y-0.5">
@@ -168,7 +260,10 @@ export default function SettingsPage() {
                       API 요청 타임아웃 시간을 설정합니다
                     </p>
                   </div>
-                  <Select defaultValue="30">
+                  <Select 
+                    value={settings.connectionTimeout.toString()}
+                    onValueChange={(value) => setSettings(prev => ({ ...prev, connectionTimeout: parseInt(value) }))}
+                  >
                     <SelectTrigger className="w-24">
                       <SelectValue />
                     </SelectTrigger>
@@ -201,7 +296,8 @@ export default function SettingsPage() {
                 <Label htmlFor="scan-endpoint">스캔 엔드포인트</Label>
                 <Input 
                   id="scan-endpoint" 
-                  defaultValue="/scan"
+                  value={settings.scanEndpoint}
+                  onChange={(e) => setSettings(prev => ({ ...prev, scanEndpoint: e.target.value }))}
                   placeholder="/scan"
                 />
               </div>
@@ -209,7 +305,8 @@ export default function SettingsPage() {
                 <Label htmlFor="jobs-endpoint">작업 관리 엔드포인트</Label>
                 <Input 
                   id="jobs-endpoint" 
-                  defaultValue="/jobs"
+                  value={settings.jobsEndpoint}
+                  onChange={(e) => setSettings(prev => ({ ...prev, jobsEndpoint: e.target.value }))}
                   placeholder="/jobs"
                 />
               </div>
@@ -220,7 +317,8 @@ export default function SettingsPage() {
                 <Label htmlFor="results-endpoint">결과 조회 엔드포인트</Label>
                 <Input 
                   id="results-endpoint" 
-                  defaultValue="/results"
+                  value={settings.resultsEndpoint}
+                  onChange={(e) => setSettings(prev => ({ ...prev, resultsEndpoint: e.target.value }))}
                   placeholder="/results"
                 />
               </div>
@@ -228,7 +326,8 @@ export default function SettingsPage() {
                 <Label htmlFor="config-endpoint">설정 관리 엔드포인트</Label>
                 <Input 
                   id="config-endpoint" 
-                  defaultValue="/database-configs"
+                  value={settings.configEndpoint}
+                  onChange={(e) => setSettings(prev => ({ ...prev, configEndpoint: e.target.value }))}
                   placeholder="/database-configs"
                 />
               </div>
@@ -238,7 +337,8 @@ export default function SettingsPage() {
               <Label htmlFor="health-endpoint">헬스체크 엔드포인트</Label>
               <Input 
                 id="health-endpoint" 
-                defaultValue="/health"
+                value={settings.healthEndpoint}
+                onChange={(e) => setSettings(prev => ({ ...prev, healthEndpoint: e.target.value }))}
                 placeholder="/health"
               />
             </div>
@@ -509,6 +609,54 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* 백엔드 연결 테스트 결과 표시 */}
+        {testResult && (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {testResult.success ? (
+                  <>
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    연결 테스트 결과
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-5 w-5 text-red-500" />
+                    연결 테스트 실패
+                  </>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {testResult.success ? (
+                <div className="text-green-600">
+                  <p>✅ 백엔드 서버에 성공적으로 연결되었습니다.</p>
+                  {testResult.details && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm text-gray-600">응답 상세 정보</summary>
+                      <pre className="mt-2 text-xs bg-gray-100 p-2 rounded overflow-auto">
+                        {JSON.stringify(testResult.details, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              ) : (
+                <div className="text-red-600">
+                  <p className="font-medium">❌ {testResult.error}</p>
+                  {testResult.details && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-sm text-gray-600">오류 상세 정보</summary>
+                      <pre className="mt-2 text-xs bg-red-50 p-2 rounded overflow-auto">
+                        {JSON.stringify(testResult.details, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
